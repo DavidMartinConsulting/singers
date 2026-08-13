@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#23262f"/>
+  <g transform="translate(96 96)">
+    <!-- blocked cells (dark) with one bright clearing -->
+    <rect x="0"   y="0"   width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="114" y="0"   width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="228" y="0"   width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="0"   y="114" width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="114" y="114" width="92" height="92" rx="14" fill="#3aa76d"/>
+    <rect x="228" y="114" width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="0"   y="228" width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="114" y="228" width="92" height="92" rx="14" fill="#4b4f60"/>
+    <rect x="228" y="228" width="92" height="92" rx="14" fill="#4b4f60"/>
+  </g>
+</svg>
