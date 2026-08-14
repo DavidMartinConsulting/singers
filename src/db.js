@@ -22,6 +22,38 @@ export function defaultConfig() {
   };
 }
 
+// Short, unguessable id for a new poll.
+export function genId() {
+  const b = new Uint8Array(8);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(36)).join("").slice(0, 10);
+}
+
+// Create a brand-new poll with a chosen title. Returns the new event row.
+export async function createEvent(title) {
+  const id = genId();
+  const config = { ...defaultConfig(), title: (title || "").trim() || "Untitled availability" };
+  const { data, error } = await supabase.from("events").insert({ id, config }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+// Every poll in the database, newest first — this powers the home page.
+export async function listEvents() {
+  const { data, error } = await supabase
+    .from("events")
+    .select("id,config,created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+// Delete a poll and (via ON DELETE CASCADE) all its participants.
+export async function deleteEvent(id) {
+  const { error } = await supabase.from("events").delete().eq("id", id);
+  if (error) throw error;
+}
+
 /* Fetch an event, creating it with defaults if it doesn't exist yet.
    Create-on-demand keeps shared links robust: the first person to open a
    fresh link brings the room into being. */

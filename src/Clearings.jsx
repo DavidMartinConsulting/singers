@@ -320,13 +320,9 @@ export default function Clearings({ roomId }) {
     }
   }
 
-  // Spin up a brand-new poll with its own link. The current poll is untouched
-  // and still lives at its own URL.
-  function startNewPoll() {
-    const bytes = new Uint8Array(8);
-    crypto.getRandomValues(bytes);
-    const id = Array.from(bytes, (b) => b.toString(36)).join("").slice(0, 10);
-    window.location.hash = `#/e/${id}`;
+  // Go to the group home page (list of all polls, where new ones are created).
+  function goHome() {
+    window.location.hash = "#/";
   }
 
   // Apply a batch of slot keys to my selection at once (used by the bulk tool,
@@ -374,6 +370,7 @@ export default function Clearings({ roomId }) {
           </div>
         </div>
         <div className="cl-headbtns">
+          <button className="cl-icon" onClick={goHome} title="Back to all polls">‹ All polls</button>
           <button className="cl-icon primary" onClick={copyLink} title="Copy the link to share">
             {copied ? "Link copied ✓" : "Copy share link"}
           </button>
@@ -542,7 +539,7 @@ export default function Clearings({ roomId }) {
           onClose={() => setShowSettings(false)}
           onRemove={removePerson}
           onReset={resetAll}
-          onNewPoll={startNewPoll}
+          onNewPoll={goHome}
         />
       )}
     </div>
@@ -916,8 +913,8 @@ function SettingsModal({ config, people, onSave, onClose, onRemove, onReset, onN
         <div className="cl-manage">
           <div className="cl-eyebrow">This poll</div>
           <div className="cl-manage-row">
-            <span>Start a separate poll with its own link<br /><small style={{ color: "var(--muted)" }}>This poll stays where it is.</small></span>
-            <button className="cl-link" onClick={onNewPoll}>New poll →</button>
+            <span>See all polls or start a new one<br /><small style={{ color: "var(--muted)" }}>Opens the group home page. This poll stays where it is.</small></span>
+            <button className="cl-link" onClick={onNewPoll}>All polls →</button>
           </div>
         </div>
 
