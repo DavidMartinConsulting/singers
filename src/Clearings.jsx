@@ -90,6 +90,7 @@ export default function Clearings({ roomId }) {
   const [copied, setCopied] = useState(false);
   const [viewSize, setViewSize] = useState(14); // days visible in the block grid at once
   const [viewStart, setViewStart] = useState(0); // index into `days` of the leftmost visible day
+  const [showBulk, setShowBulk] = useState(false);
 
   const paintingRef = useRef(false);
   const paintModeRef = useRef("add");
@@ -328,6 +329,16 @@ export default function Clearings({ roomId }) {
     window.location.hash = `#/e/${id}`;
   }
 
+  // Apply a batch of slot keys to my selection at once (used by the bulk tool,
+  // which can span the whole range regardless of what's on screen).
+  function applyBulk(keys, mode) {
+    setMyBlocked((prev) => {
+      const n = new Set(prev);
+      for (const k of keys) { if (mode === "block") n.add(k); else n.delete(k); }
+      return n;
+    });
+  }
+
   const stats = useMemo(() => {
     const total = people.length;
     let allFree = 0;
@@ -420,6 +431,9 @@ export default function Clearings({ roomId }) {
                 free. Drag over shaded cells again to clear them.
               </p>
               <div className="cl-blockbar-actions">
+                <button className={"cl-icon" + (showBulk ? " primary" : "")} onClick={() => setShowBulk((v) => !v)}>
+                  Bulk block a range {showBulk ? "▴" : "▾"}
+                </button>
                 <button className="cl-icon" onClick={clearMine} disabled={myBlocked.size === 0}>
                   Clear my times
                 </button>
@@ -429,6 +443,8 @@ export default function Clearings({ roomId }) {
                 </label>
               </div>
             </div>
+
+            {showBulk && <BulkEdit config={config} slots={slots} onApply={applyBulk} />}
 
             <div className="cl-legend">
               <span className="cl-lg"><i className="sw sw-mine" /> you're blocked</span>
@@ -529,6 +545,84 @@ export default function Clearings({ roomId }) {
           onNewPoll={startNewPoll}
         />
       )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Bulk edit — apply a block/clear across a whole date range at once   */
+/* ================================================================== */
+function BulkEdit({ config, slots, onApply }) {
+  const lastDate = config.numDays > 0 ? addDays(config.startDate, config.numDays - 1) : config.startDate;
+  const [from, setFrom] = useState(config.startDate);
+  const [to, setTo] = useState(lastDate);
+  const [dows, setDows] = useState(() => new Set([1, 2, 3, 4, 5])); // default: weekdays
+  const [todFrom, setTodFrom] = useState(config.startHour);
+  const [todTo, setTodTo] = useState(config.endHour);
+
+  useEffect(() => {
+    setFrom(config.startDate);
+    setTo(lastDate);
+    setTodFrom(config.startHour);
+    setTodTo(config.endHour);
+  }, [config.startDate, config.numDays, config.startHour, config.endHour]); // eslint-disable-line
+
+  const matching = useMemo(() => {
+    const fromMin = todFrom * 60, toMin = todTo * 60;
+    return slots
+      .filter((s) => s.iso >= from && s.iso <= to && dows.has(s.dow) && s.startMin >= fromMin && s.startMin <= toMin - 1)
+      .map((s) => s.key);
+  }, [slots, from, to, dows, todFrom, todTo]);
+
+  const toggleDow = (d) => setDows((prev) => { const n = new Set(prev); n.has(d) ? n.delete(d) : n.add(d); return n; });
+
+  return (
+    <div className="cl-filters cl-bulk">
+      <p className="cl-help" style={{ marginBottom: 4 }}>
+        Mark a repeating pattern across the whole range in one go — e.g. weekdays, 9 AM–5 PM, for the next few months.
+      </p>
+      <div className="cl-fgrid">
+        <label className="cl-field">
+          <span>From date</span>
+          <input type="date" className="cl-input" value={from} min={config.startDate} max={to} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="cl-field">
+          <span>To date</span>
+          <input type="date" className="cl-input" value={to} min={from} max={lastDate} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <label className="cl-field">
+          <span>Time from</span>
+          <select className="cl-input" value={todFrom} onChange={(e) => setTodFrom(+e.target.value)}>
+            {hourRange(config.startHour, config.endHour).map((h) => <option key={h} value={h}>{fmtTime(h * 60)}</option>)}
+          </select>
+        </label>
+        <label className="cl-field">
+          <span>Time to</span>
+          <select className="cl-input" value={todTo} onChange={(e) => setTodTo(+e.target.value)}>
+            {hourRange(config.startHour + 1, config.endHour + 1).map((h) => (
+              <option key={h} value={h}>{h === 24 ? "12:00 AM" : fmtTime(h * 60)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="cl-frow">
+        <div className="cl-field">
+          <span>Days of week</span>
+          <div className="cl-dows">
+            {DOW1.map((lbl, d) => (
+              <button key={d} className={"cl-dow" + (dows.has(d) ? " on" : "")} onClick={() => toggleDow(d)} title={DOW[d]}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+        <div className="cl-field" style={{ flex: 1, minWidth: 160 }}>
+          <span>Matches</span>
+          <div className="cl-bulk-count mono">{matching.length} time {matching.length === 1 ? "slot" : "slots"}</div>
+        </div>
+        <div className="cl-bulk-actions">
+          <button className="cl-btn" disabled={!matching.length} onClick={() => onApply(matching, "block")}>Block these</button>
+          <button className="cl-btn ghost" disabled={!matching.length} onClick={() => onApply(matching, "clear")}>Clear these</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -912,6 +1006,9 @@ function Style() {
     .cl-link{border:none; background:none; color:var(--accent); cursor:pointer; font:inherit; padding:0; text-decoration:underline; text-underline-offset:2px;}
     .cl-link.danger{color:#c0392b;}
 
+    .cl-bulk{margin-bottom:14px;}
+    .cl-bulk-count{font-size:15px; color:var(--ink); padding-top:2px;}
+    .cl-bulk-actions{display:flex; gap:8px; align-items:flex-end;}
     .cl-gridnav{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
     .cl-gridnav-move{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
     .cl-gridnav-range{font-size:13px; color:var(--ink); min-width:180px; text-align:center;}
