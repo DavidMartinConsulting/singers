@@ -1,0 +1,31 @@
+name: Keep Supabase awake
+
+# Supabase free-tier projects pause after 7 days with no database activity.
+# This makes a tiny read request on a schedule so the inactivity timer never
+# runs out and your event links stay live. See README "Keeping it alive".
+
+on:
+  schedule:
+    - cron: "0 12 */3 * *" # every 3 days at 12:00 UTC (safe buffer under 7)
+  workflow_dispatch: {} # lets you run it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the REST endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "Missing SUPABASE_URL or SUPABASE_KEY repo secret." >&2
+            exit 1
+          fi
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/events?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY")
+          echo "HTTP $code"
+          # 2xx means the DB answered and the pause timer just reset.
+          case "$code" in 2*) exit 0 ;; *) exit 1 ;; esac

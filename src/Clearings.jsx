@@ -88,6 +88,8 @@ export default function Clearings({ roomId }) {
   const [nameDraft, setNameDraft] = useState("");
   const [showOthers, setShowOthers] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [viewSize, setViewSize] = useState(14); // days visible in the block grid at once
+  const [viewStart, setViewStart] = useState(0); // index into `days` of the leftmost visible day
 
   const paintingRef = useRef(false);
   const paintModeRef = useRef("add");
@@ -180,6 +182,25 @@ export default function Clearings({ roomId }) {
     for (let d = 0; d < config.numDays; d++) arr.push(addDays(config.startDate, d));
     return arr;
   }, [config]);
+
+  /* Paging: the block grid shows a window of `viewSize` days at a time so a
+     year-long range stays usable. The full range still lives in `days`/`slots`
+     and the Find view searches all of it. */
+  const maxStart = Math.max(0, days.length - viewSize);
+  const clampedStart = Math.min(viewStart, maxStart);
+  const visibleDays = useMemo(
+    () => days.slice(clampedStart, clampedStart + viewSize),
+    [days, clampedStart, viewSize]
+  );
+  const todayIndex = useMemo(() => {
+    const t = toISO(new Date());
+    const i = days.indexOf(t);
+    if (i >= 0) return Math.min(i, maxStart);
+    return t < config.startDate ? 0 : maxStart;
+  }, [days, config.startDate, maxStart]);
+
+  // When the grid definition changes, jump the view to today (or the nearest edge).
+  useEffect(() => { setViewStart(todayIndex); }, [config.startDate, config.numDays]); // eslint-disable-line
 
   const timeRows = useMemo(() => {
     const rows = [];
@@ -290,6 +311,23 @@ export default function Clearings({ roomId }) {
     else done();
   }
 
+  // Wipe only the current person's marks (their row stays, just emptied).
+  function clearMine() {
+    if (myBlocked.size === 0) return;
+    if (window.confirm("Clear all of your blocked times? This only affects your own marks.")) {
+      setMyBlocked(new Set());
+    }
+  }
+
+  // Spin up a brand-new poll with its own link. The current poll is untouched
+  // and still lives at its own URL.
+  function startNewPoll() {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    const id = Array.from(bytes, (b) => b.toString(36)).join("").slice(0, 10);
+    window.location.hash = `#/e/${id}`;
+  }
+
   const stats = useMemo(() => {
     const total = people.length;
     let allFree = 0;
@@ -381,10 +419,15 @@ export default function Clearings({ roomId }) {
                 Drag across the grid to shade the times <b>you're not available</b>. Everything you leave blank counts as
                 free. Drag over shaded cells again to clear them.
               </p>
-              <label className="cl-toggle">
-                <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
-                Show others' conflicts
-              </label>
+              <div className="cl-blockbar-actions">
+                <button className="cl-icon" onClick={clearMine} disabled={myBlocked.size === 0}>
+                  Clear my times
+                </button>
+                <label className="cl-toggle">
+                  <input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} />
+                  Show others' conflicts
+                </label>
+              </div>
             </div>
 
             <div className="cl-legend">
@@ -397,13 +440,34 @@ export default function Clearings({ roomId }) {
               </span>
             </div>
 
+            {days.length > viewSize && (
+              <div className="cl-gridnav">
+                <div className="cl-gridnav-move">
+                  <button className="cl-icon" onClick={() => setViewStart((s) => Math.max(0, Math.min(s, maxStart) - viewSize))} disabled={clampedStart <= 0}>‹ Earlier</button>
+                  <span className="cl-gridnav-range mono">
+                    {fmtDay(visibleDays[0])} – {fmtDay(visibleDays[visibleDays.length - 1])}
+                  </span>
+                  <button className="cl-icon" onClick={() => setViewStart((s) => Math.min(maxStart, Math.min(s, maxStart) + viewSize))} disabled={clampedStart >= maxStart}>Later ›</button>
+                  <button className="cl-icon" onClick={() => setViewStart(todayIndex)}>Today</button>
+                </div>
+                <div className="cl-gridnav-size">
+                  <span className="mono">window:</span>
+                  {[7, 14, 30].map((n) => (
+                    <button key={n} className={"cl-dow" + (viewSize === n ? " on" : "")} style={{ width: "auto", padding: "0 9px" }} onClick={() => setViewSize(n)}>
+                      {n === 7 ? "1w" : n === 14 ? "2w" : "1m"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="cl-gridwrap" style={{ userSelect: "none" }}>
               <div
                 className="cl-grid"
-                style={{ gridTemplateColumns: `var(--gutter) repeat(${days.length}, minmax(56px, 1fr))` }}
+                style={{ gridTemplateColumns: `var(--gutter) repeat(${visibleDays.length}, minmax(56px, 1fr))` }}
               >
                 <div className="cl-corner" />
-                {days.map((iso) => {
+                {visibleDays.map((iso) => {
                   const dt = parseISO(iso);
                   const wk = dt.getDay() === 0 || dt.getDay() === 6;
                   return (
@@ -418,7 +482,7 @@ export default function Clearings({ roomId }) {
                 {timeRows.map((min) => (
                   <React.Fragment key={min}>
                     <div className="cl-rowh mono">{fmtTime(min)}</div>
-                    {days.map((iso) => {
+                    {visibleDays.map((iso) => {
                       const key = `${iso}T${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
                       const mine = myBlocked.has(key);
                       const oth = showOthers ? othersCount.map.get(key) || 0 : 0;
@@ -462,6 +526,7 @@ export default function Clearings({ roomId }) {
           onClose={() => setShowSettings(false)}
           onRemove={removePerson}
           onReset={resetAll}
+          onNewPoll={startNewPoll}
         />
       )}
     </div>
@@ -618,7 +683,9 @@ function FindView({ slots, people, config }) {
       </div>
 
       <div className="cl-resulthead mono">
-        {total === 0 ? "No one has blocked any times yet" : `${results.length} matching ${results.length === 1 ? "slot" : "slots"}`}
+        {total === 0
+          ? "No one has blocked any times yet"
+          : `${results.length} matching ${results.length === 1 ? "slot" : "slots"}${results.length > MAX_RESULTS ? ` · showing first ${MAX_RESULTS}` : ""}`}
       </div>
 
       {total === 0 ? (
@@ -627,7 +694,7 @@ function FindView({ slots, people, config }) {
         <div className="cl-empty">Nothing matches these filters. Try widening the dates, the time window, or lowering the availability threshold.</div>
       ) : (
         <ul className="cl-results">
-          {results.map((r) => {
+          {results.slice(0, MAX_RESULTS).map((r) => {
             const isOpen = open.has(r.key);
             return (
               <li key={r.key} className="cl-result">
@@ -656,9 +723,16 @@ function FindView({ slots, people, config }) {
           })}
         </ul>
       )}
+      {results.length > MAX_RESULTS && (
+        <div className="cl-note" style={{ marginTop: 10 }}>
+          {results.length - MAX_RESULTS} more match. Narrow the date range, time window, or raise the availability threshold to see them.
+        </div>
+      )}
     </section>
   );
 }
+
+const MAX_RESULTS = 400;
 
 function hourRange(a, b) {
   const out = [];
@@ -669,7 +743,7 @@ function hourRange(a, b) {
 /* ================================================================== */
 /*  Settings modal                                                     */
 /* ================================================================== */
-function SettingsModal({ config, people, onSave, onClose, onRemove, onReset }) {
+function SettingsModal({ config, people, onSave, onClose, onRemove, onReset, onNewPoll }) {
   const [d, setD] = useState(config);
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (patch) => setD((p) => ({ ...p, ...patch }));
@@ -677,7 +751,7 @@ function SettingsModal({ config, people, onSave, onClose, onRemove, onReset }) {
   const apply = () => {
     const clean = {
       ...d,
-      numDays: Math.max(1, Math.min(90, Math.round(d.numDays) || 1)),
+      numDays: Math.max(1, Math.min(366, Math.round(d.numDays) || 1)),
       startHour: Math.max(0, Math.min(23, d.startHour)),
       endHour: Math.max(1, Math.min(24, d.endHour)),
       slotMinutes: [15, 30, 60].includes(d.slotMinutes) ? d.slotMinutes : 60,
@@ -708,7 +782,7 @@ function SettingsModal({ config, people, onSave, onClose, onRemove, onReset }) {
           </label>
           <label className="cl-field">
             <span>Number of days</span>
-            <input type="number" min="1" max="90" className="cl-input" value={d.numDays} onChange={(e) => set({ numDays: +e.target.value })} />
+            <input type="number" min="1" max="366" className="cl-input" value={d.numDays} onChange={(e) => set({ numDays: +e.target.value })} />
           </label>
           <label className="cl-field">
             <span>Day starts</span>
@@ -731,7 +805,7 @@ function SettingsModal({ config, people, onSave, onClose, onRemove, onReset }) {
             </select>
           </label>
         </div>
-        <p className="cl-note">Changing the grid keeps everyone's existing marks that still fall inside it.</p>
+        <p className="cl-note">Ranges up to a year are supported — the grid pages through a few weeks at a time. Changing the grid keeps everyone's existing marks that still fall inside it.</p>
 
         {people.length > 0 && (
           <div className="cl-manage">
@@ -745,12 +819,20 @@ function SettingsModal({ config, people, onSave, onClose, onRemove, onReset }) {
           </div>
         )}
 
+        <div className="cl-manage">
+          <div className="cl-eyebrow">This poll</div>
+          <div className="cl-manage-row">
+            <span>Start a separate poll with its own link<br /><small style={{ color: "var(--muted)" }}>This poll stays where it is.</small></span>
+            <button className="cl-link" onClick={onNewPoll}>New poll →</button>
+          </div>
+        </div>
+
         <div className="cl-modal-foot">
           {!confirmReset ? (
-            <button className="cl-link danger" onClick={() => setConfirmReset(true)}>Reset everything</button>
+            <button className="cl-link danger" onClick={() => setConfirmReset(true)}>Reset everything (clear this poll)</button>
           ) : (
             <span className="cl-confirm">
-              Delete all people and marks? <button className="cl-link danger" onClick={onReset}>Yes, reset</button>
+              Delete all people and marks in this poll? <button className="cl-link danger" onClick={onReset}>Yes, reset</button>
               <button className="cl-link" onClick={() => setConfirmReset(false)}>cancel</button>
             </span>
           )}
@@ -817,6 +899,9 @@ function Style() {
     .cl-blockbar{display:flex; align-items:flex-start; gap:16px; justify-content:space-between; flex-wrap:wrap; margin-bottom:8px;}
     .cl-help{font-size:13.5px; color:var(--muted); max-width:60ch; line-height:1.5; margin:0;}
     .cl-help b{color:var(--ink);}
+    .cl-blockbar-actions{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+    .cl-icon:disabled{opacity:.4; cursor:default;}
+    .cl-icon:disabled:hover{border-color:var(--line);}
     .cl-toggle{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); white-space:nowrap;}
 
     .cl-legend{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin:10px 0 12px; font-size:12px; color:var(--muted);}
@@ -826,6 +911,11 @@ function Style() {
     .sw-oth{background:hsl(8 55% 72%);}
     .cl-link{border:none; background:none; color:var(--accent); cursor:pointer; font:inherit; padding:0; text-decoration:underline; text-underline-offset:2px;}
     .cl-link.danger{color:#c0392b;}
+
+    .cl-gridnav{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
+    .cl-gridnav-move{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+    .cl-gridnav-range{font-size:13px; color:var(--ink); min-width:180px; text-align:center;}
+    .cl-gridnav-size{display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted);}
 
     .cl-gridwrap{overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--card); -webkit-overflow-scrolling:touch;}
     .cl-grid{display:grid; min-width:max-content;}
